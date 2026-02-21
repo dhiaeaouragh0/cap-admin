@@ -141,7 +141,7 @@ export default function Dashboard() {
 
       {/* Stats Cards – ton ancien layout, mais stylé */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card className="bg-gradient-to-br from-blue-50/80 to-blue-100/80 dark:from-blue-950/60 dark:to-blue-900/60 border-blue-200/50 dark:border-blue-800/50">
+        <Card className="bg-linear-to-br from-blue-50/80 to-blue-100/80 dark:from-blue-950/60 dark:to-blue-900/60 border-blue-200/50 dark:border-blue-800/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Commandes</CardTitle>
             <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
@@ -156,7 +156,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-yellow-50/80 to-yellow-100/80 dark:from-yellow-950/60 dark:to-yellow-900/60 border-yellow-200/50 dark:border-yellow-800/50">
+        <Card className="bg-linear-to-br from-yellow-50/80 to-yellow-100/80 dark:from-yellow-950/60 dark:to-yellow-900/60 border-yellow-200/50 dark:border-yellow-800/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Commandes en attente</CardTitle>
             <Clock className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
@@ -173,7 +173,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-green-50/80 to-green-100/80 dark:from-green-950/60 dark:to-green-900/60 border-green-200/50 dark:border-green-800/50">
+        <Card className="bg-linear-to-br from-green-50/80 to-green-100/80 dark:from-green-950/60 dark:to-green-900/60 border-green-200/50 dark:border-green-800/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Chiffre d'affaires total</CardTitle>
             <DollarSign className="h-5 w-5 text-green-600 dark:text-green-400" />
@@ -190,7 +190,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-purple-50/80 to-purple-100/80 dark:from-purple-950/60 dark:to-purple-900/60 border-purple-200/50 dark:border-purple-800/50">
+        <Card className="bg-linear-to-br from-purple-50/80 to-purple-100/80 dark:from-purple-950/60 dark:to-purple-900/60 border-purple-200/50 dark:border-purple-800/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">CA ce mois</CardTitle>
             <DollarSign className="h-5 w-5 text-purple-600 dark:text-purple-400" />
@@ -207,7 +207,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-cyan-50/80 to-cyan-100/80 dark:from-cyan-950/60 dark:to-cyan-900/60 border-cyan-200/50 dark:border-cyan-800/50">
+        <Card className="bg-linear-to-br from-cyan-50/80 to-cyan-100/80 dark:from-cyan-950/60 dark:to-cyan-900/60 border-cyan-200/50 dark:border-cyan-800/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Commandes aujourd'hui</CardTitle>
             <ArrowUpRight className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
@@ -222,7 +222,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-red-50/80 to-red-100/80 dark:from-red-950/60 dark:to-red-900/60 border-red-200/50 dark:border-red-800/50">
+        <Card className="bg-linear-to-br from-red-50/80 to-red-100/80 dark:from-red-950/60 dark:to-red-900/60 border-red-200/50 dark:border-red-800/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Taux d'annulation</CardTitle>
             <Clock className="h-5 w-5 text-red-600 dark:text-red-400" />
