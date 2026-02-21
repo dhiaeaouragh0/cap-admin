@@ -53,13 +53,7 @@ interface Variant {
   _id: string;
 }
 
-interface Category {
-  _id: string;
-  name: string;
-  slug: string;
-  description?: string;
-  parent?: Category | null;
-}
+
 
 interface Product {
   _id: string;
@@ -68,7 +62,6 @@ interface Product {
   description: string;
   basePrice: number;
   discount: number;
-  category: Category;
   brand?: string;
   images: string[];
   variants: Variant[];
@@ -98,10 +91,6 @@ export default function ProductList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
 
@@ -119,7 +108,6 @@ export default function ProductList() {
     };
 
     if (searchTerm.trim()) params.search = searchTerm.trim();
-    if (selectedCategory !== 'all') params.category = selectedCategory;
     if (minPrice && !isNaN(Number(minPrice))) params.minPrice = Number(minPrice);
     if (maxPrice && !isNaN(Number(maxPrice))) params.maxPrice = Number(maxPrice);
 
@@ -142,7 +130,7 @@ export default function ProductList() {
     debounce((page: number) => {
       fetchProducts(page);
     }, 500),
-    [searchTerm, selectedCategory, minPrice, maxPrice,inStockOnly]
+    [searchTerm, minPrice, maxPrice,inStockOnly]
   );
 
   useEffect(() => {
@@ -151,20 +139,7 @@ export default function ProductList() {
       debouncedFetch.cancel(); // cleanup
     };
   }, [debouncedFetch]);
-  // Fetch all categories for dropdown
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const res = await api.get('/categories');
-        // Your response is an array directly → perfect
-        setCategories(res.data || []);
-      } catch (err: any) {
-        console.error('Erreur chargement catégories:', err);
-        toast.error('Impossible de charger les catégories pour le filtre');
-      }
-    };
-    fetchCategories();
-  }, []);
+
 
   const handleDelete = async (id: string) => {
     try {
@@ -244,7 +219,7 @@ export default function ProductList() {
 
         <CardContent className="space-y-6">
 
-          {/* ROW 1 — Search + Category */}
+          {/* ROW 1 — Search */}
           <div className="flex flex-col md:flex-row gap-4 items-end">
 
             {/* Search */}
@@ -258,31 +233,6 @@ export default function ProductList() {
               />
             </div>
 
-            {/* Category */}
-            <div className="w-full md:w-50 ">
-              <Select
-                value={selectedCategory}
-                onValueChange={(value) => {
-                  setSelectedCategory(value);
-                  setCurrentPage(1);
-                }}
-              >
-                <SelectTrigger className="h-10">
-                  <SelectValue
-                    placeholder="Toutes les catégories"
-                    className="data-placeholder:text-white"
-                  />
-                </SelectTrigger>
-                <SelectContent className="max-h-80 overflow-y-auto">
-                  <SelectItem value="all">Toutes les catégories</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat._id} value={cat._id}>
-                      {cat.name} {cat.parent ? `(${cat.parent.name})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           {/* ROW 2 — Price range */}
@@ -380,7 +330,6 @@ export default function ProductList() {
                       </TableHead>
 
                       <TableHead>Variantes</TableHead>
-                      <TableHead>Catégorie</TableHead>
                       <TableHead>Mis en avant</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -420,7 +369,6 @@ export default function ProductList() {
                         </TableCell>
                         <TableCell>{getEffectiveStock(product)}</TableCell>
                         <TableCell>{product.variants.length || '—'}</TableCell>
-                        <TableCell>{product.category?.name || '—'}</TableCell>
                         <TableCell>
                           {product.isFeatured ? (
                             <Badge className="bg-blue-600">Oui</Badge>

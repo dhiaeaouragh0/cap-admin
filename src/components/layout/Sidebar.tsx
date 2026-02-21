@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Package,
   ShoppingCart,
-  Tags,
   MapPin,
   LogOut,
   Menu,
@@ -23,7 +22,6 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/products', label: 'Products', icon: Package },
   { to: '/orders', label: 'Orders', icon: ShoppingCart },
-  { to: '/categories', label: 'Categories', icon: Tags },
   { to: '/wilayas', label: 'Wilayas Shipping', icon: MapPin },
 ];
 
