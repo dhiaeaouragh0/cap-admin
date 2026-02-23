@@ -30,14 +30,6 @@ import api from '@/lib/api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils'; // shadcn utility for classNames
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
 import debounce from "lodash.debounce";
 
 
@@ -307,7 +299,6 @@ export default function ProductList() {
                       <TableHead>Image</TableHead>
                       <TableHead>Nom</TableHead>
                       <TableHead>Prix</TableHead>
-                      <TableHead>Remise</TableHead>
                       <TableHead>
                         <div className="flex items-center gap-2 whitespace-nowrap">
                           <span>Stock total</span>
@@ -358,15 +349,6 @@ export default function ProductList() {
                           </div>
                         </TableCell>
                         <TableCell>{product.basePrice.toLocaleString()} DA</TableCell>
-                        <TableCell>
-                          {product.discount > 0 ? (
-                            <Badge variant="outline" className="bg-green-50 text-green-700">
-                              -{product.discount}%
-                            </Badge>
-                          ) : (
-                            '—'
-                          )}
-                        </TableCell>
                         <TableCell>{getEffectiveStock(product)}</TableCell>
                         <TableCell>{product.variants.length || '—'}</TableCell>
                         <TableCell>

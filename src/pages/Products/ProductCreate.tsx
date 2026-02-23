@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 import { Plus, Trash2, Upload, X, Loader2 } from 'lucide-react';
 import api from '@/lib/api';
 
+// ──────────────────────────────────────────────── Types
+
 interface VariantImage {
   file: File;
   preview: string;
@@ -22,124 +24,132 @@ interface Variant {
   price: number;
   stock: number;
   isDefault: boolean;
-  images: VariantImage[];
-  uploadedImageUrls: string[];
+  images: VariantImage[];           // images locales pour preview
+  uploadedImageUrls: string[];      // URLs après upload backend
 }
 
-interface Spec {
-  key: string;
-  value: string;
-}
+
 
 export default function ProductCreate() {
   const navigate = useNavigate();
 
-  const [name, setName]                 = useState('');
-  const [slug, setSlug]                 = useState('');
-  const [description, setDescription]   = useState('');
-  const [brand, setBrand]               = useState('');
-  const [isFeatured, setIsFeatured]     = useState(false);
-
-  const [variants, setVariants]         = useState<Variant[]>([]);
-  const [specs, setSpecs]               = useState<Spec[]>([]);
-
-  const [uploading, setUploading]       = useState(false);
-  const [submitting, setSubmitting]     = useState(false);
-
-  // Toujours au moins une variante au démarrage
-  useEffect(() => {
-    if (variants.length === 0) {
-      addVariant(true); // true = première → isDefault
-    }
-  }, []);
-
-  // Slug auto
-  useEffect(() => {
-    if (!name.trim()) {
-      setSlug('');
-      return;
-    }
-    const generated = name
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^\w\-]+/g, '')
-      .replace(/\-\-+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    setSlug(generated);
-  }, [name]);
-
-  const defaultVariant = variants.find(v => v.isDefault) || variants[0];
-  const calculatedBasePrice = defaultVariant?.price ?? 0;
-
-  const addVariant = (isFirst = false) => {
-    const newVariant: Variant = {
+  // ── Form states ────────────────────────────────────────
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [description, setDescription] = useState('');
+  const [brand, setBrand] = useState('');
+  const [isFeatured, setIsFeatured] = useState(false);
+  const [variants, setVariants] = useState<Variant[]>([
+    {
       name: '',
       sku: '',
       price: 0,
       stock: 0,
-      isDefault: isFirst || variants.length === 0,
+      isDefault: true, // ← première variante par défaut
       images: [],
       uploadedImageUrls: [],
-    };
-    setVariants(prev => [...prev, newVariant]);
+    },
+  ]);
+
+  // Images globales (produit)
+
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Générer slug en temps réel
+  useEffect(() => {
+    if (name.trim()) {
+      const generated = name
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w\-]+/g, '')
+        .replace(/\-\-+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .trim();
+      setSlug(generated);
+    } else {
+      setSlug('');
+    }
+  }, [name]);
+
+
+  // ── Variantes ──────────────────────────────────────────
+  const addVariant = () => {
+    setVariants([
+      ...variants,
+      {
+        name: '',
+        sku: '',
+        price: 0,
+        stock: 0,
+        isDefault: false,
+        images: [],
+        uploadedImageUrls: [],
+      },
+    ]);
   };
 
   const removeVariant = (index: number) => {
-    if (variants.length <= 1) {
-      toast.error("Il faut au moins une variante");
-      return;
+  if (variants.length === 1) {
+    toast.error('Au moins une variante est obligatoire');
+    return;
+  }
+
+  setVariants((prev) => {
+    const updated = prev.filter((_, i) => i !== index);
+
+    // Sécurité : s'assurer qu'il reste une variante par défaut
+    if (!updated.some(v => v.isDefault)) {
+      updated[0].isDefault = true;
     }
 
-    const removingDefault = variants[index].isDefault;
-    let next = variants.filter((_, i) => i !== index);
-
-    if (removingDefault) {
-      next = next.map((v, i) => i === 0 ? { ...v, isDefault: true } : v);
-    }
-
-    setVariants(next);
-  };
+    return updated;
+  });
+};
 
   const updateVariant = (index: number, field: keyof Variant, value: any) => {
-    setVariants(prev => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: value };
-      return next;
-    });
-  };
+    const updated = [...variants];
 
-  const handleVariantImageChange = (e: React.ChangeEvent<HTMLInputElement>, idx: number) => {
-    if (!e.target.files) return;
-    const newFiles = Array.from(e.target.files);
-    const variant = variants[idx];
-
-    if (variant.images.length + newFiles.length > 5) {
-      toast.error('Maximum 5 images par variante');
-      return;
+    if (field === 'isDefault' && value === true) {
+      // Désactiver toutes les autres
+      updated.forEach((v, i) => {
+        v.isDefault = i === index;
+      });
+    } else {
+      updated[index] = { ...updated[index], [field]: value };
     }
 
-    const newPreviews = newFiles.map(f => URL.createObjectURL(f));
-    setVariants(prev => {
-      const copy = [...prev];
-      copy[idx].images.push(...newFiles.map((f, i) => ({
+    setVariants(updated);
+  };
+
+  const handleVariantImageChange = (e: React.ChangeEvent<HTMLInputElement>, variantIndex: number) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      const variant = variants[variantIndex];
+      if (variant.images.length + newFiles.length > 5) {
+        toast.error('Maximum 5 images par variante');
+        return;
+      }
+
+      const newPreviews = newFiles.map((f) => URL.createObjectURL(f));
+      const updatedVariants = [...variants];
+      updatedVariants[variantIndex].images.push(...newFiles.map((f, i) => ({
         file: f,
         preview: newPreviews[i],
       })));
-      return copy;
-    });
+      setVariants(updatedVariants);
+    }
   };
 
-  const removeVariantImage = (vIdx: number, imgIdx: number) => {
-    setVariants(prev => {
-      const copy = [...prev];
-      copy[vIdx].images = copy[vIdx].images.filter((_, i) => i !== imgIdx);
-      copy[vIdx].uploadedImageUrls = copy[vIdx].uploadedImageUrls.filter((_, i) => i !== imgIdx);
-      return copy;
-    });
+  const removeVariantImage = (variantIndex: number, imageIndex: number) => {
+    const updatedVariants = [...variants];
+    updatedVariants[variantIndex].images = updatedVariants[variantIndex].images.filter((_, i) => i !== imageIndex);
+    updatedVariants[variantIndex].uploadedImageUrls = updatedVariants[variantIndex].uploadedImageUrls.filter((_, i) => i !== imageIndex);
+    setVariants(updatedVariants);
   };
 
-  const uploadVariantImages = async (idx: number): Promise<string[]> => {
-    const variant = variants[idx];
+  const uploadVariantImages = async (variantIndex: number): Promise<string[]> => {
+    const variant = variants[variantIndex];
     if (variant.images.length === 0) return variant.uploadedImageUrls;
 
     try {
@@ -150,61 +160,52 @@ export default function ProductCreate() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      const urls = res.data.urls ?? [];
-      setVariants(prev => {
-        const copy = [...prev];
-        copy[idx].uploadedImageUrls = [...copy[idx].uploadedImageUrls, ...urls];
-        return copy;
-      });
-      return urls;
-    } catch {
-      toast.error(`Échec upload images variante ${variant.name || idx + 1}`);
+      const newUrls = res.data.urls || [];
+      const updatedVariants = [...variants];
+      updatedVariants[variantIndex].uploadedImageUrls.push(...newUrls);
+      setVariants(updatedVariants);
+      return newUrls;
+    } catch (err: any) {
+      toast.error(`Erreur upload images variante "${variant.name}"`);
       return [];
     }
   };
 
-  const addSpec = () => setSpecs(prev => [...prev, { key: '', value: '' }]);
-  const removeSpec = (idx: number) => setSpecs(prev => prev.filter((_, i) => i !== idx));
-  const updateSpec = (idx: number, field: 'key' | 'value', val: string) => {
-    setSpecs(prev => {
-      const next = [...prev];
-      next[idx][field] = val;
-      return next;
-    });
-  };
-
+  // ── Submit ─────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!name.trim() || !description.trim()) {
-      toast.error('Nom et description obligatoires');
+    // Validation
+    if (!name.trim() || !description.trim() ) {
+      toast.error('Champs obligatoires manquants');
       return;
     }
 
     if (!variants.some(v => v.isDefault)) {
-      toast.error('Sélectionnez une variante par défaut');
-      return;
+      variants[0].isDefault = true;
     }
 
-    if (!variants.every(v => v.name.trim() && v.sku.trim() && v.price > 0)) {
-      toast.error('Chaque variante doit avoir un nom, SKU et prix > 0');
+    if (variants.length === 0) {
+      toast.error("Au moins une variante est obligatoire");
       return;
     }
 
     setSubmitting(true);
 
     try {
-      // Upload toutes les images variantes
-      for (let i = 0; i < variants.length; i++) {
-        await uploadVariantImages(i);
+
+      // Upload images pour chaque variante
+      const variantsWithImages = [...variants];
+      for (let i = 0; i < variantsWithImages.length; i++) {
+        const variantUrls = await uploadVariantImages(i);
+        variantsWithImages[i].uploadedImageUrls = [
+          ...variantsWithImages[i].uploadedImageUrls,
+          ...variantUrls,
+        ];
       }
 
-      const specsObj: Record<string, string> = {};
-      specs.forEach(s => {
-        if (s.key.trim() && s.value.trim()) specsObj[s.key.trim()] = s.value.trim();
-      });
 
-      const cleanVariants = variants.map(v => ({
+      const cleanVariants = variants.map((v) => ({
         name: v.name.trim(),
         sku: v.sku.trim(),
         price: Number(v.price),
@@ -218,19 +219,17 @@ export default function ProductCreate() {
         slug,
         description: description.trim(),
         brand: brand.trim() || undefined,
-        images: [], // plus utilisé → on envoie vide
+        images: [], // backend le garde vide
         variants: cleanVariants,
-        basePrice: calculatedBasePrice,
         isFeatured,
-        ...(Object.keys(specsObj).length ? { specs: specsObj } : {}),
       };
 
       await api.post('/products', payload);
 
-      toast.success('Produit créé !');
+      toast.success('Produit créé avec succès !');
       navigate('/products');
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Erreur création');
+      toast.error(err.response?.data?.message || 'Erreur création produit');
       console.error(err);
     } finally {
       setSubmitting(false);
@@ -241,169 +240,194 @@ export default function ProductCreate() {
     <div className="space-y-8 pb-16">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Ajouter un produit</h1>
-        <Button variant="outline" onClick={() => navigate('/products')}>Retour</Button>
+        <Button variant="outline" onClick={() => navigate('/products')}>
+          Retour à la liste
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {/* Informations principales */}
         <Card>
-          <CardHeader><CardTitle>Informations principales</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Informations principales</CardTitle>
+          </CardHeader>
           <CardContent className="grid gap-6 md:grid-cols-2">
             <div className="space-y-2">
-              <Label>Nom *</Label>
-              <Input value={name} onChange={e => setName(e.target.value)} required />
+              <Label htmlFor="name">Nom du produit *</Label>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="ex: Manette DualSense Custom FIFA 25"
+                required
+              />
             </div>
+
             <div className="space-y-2">
-              <Label>Slug (auto)</Label>
-              <Input value={slug} readOnly className="bg-muted" />
+              <Label>Slug (généré automatiquement)</Label>
+              <Input
+                value={slug}
+                readOnly
+                className="bg-muted cursor-not-allowed"
+              />
             </div>
+
             <div className="space-y-2">
-              <Label>Marque</Label>
-              <Input value={brand} onChange={e => setBrand(e.target.value)} />
+              <Label htmlFor="brand">Marque</Label>
+              <Input
+                id="brand"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                placeholder="ex: Sony Custom DZ"
+              />
             </div>
+
             <div className="md:col-span-2 space-y-2">
-              <Label>Description *</Label>
-              <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={5} required />
+              <Label htmlFor="description">Description *</Label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Décrivez le produit en détail..."
+                rows={5}
+                required
+              />
             </div>
-            <div className="flex items-center space-x-2 pt-4">
-              <Switch checked={isFeatured} onCheckedChange={setIsFeatured} />
-              <Label>Produit mis en avant</Label>
+
+
+            <div className="flex items-center space-x-2 pt-8">
+              <Switch
+                id="isFeatured"
+                checked={isFeatured}
+                onCheckedChange={setIsFeatured}
+              />
+              <Label htmlFor="isFeatured">Produit mis en avant</Label>
             </div>
           </CardContent>
         </Card>
 
-        {/* Variantes – toujours présentes */}
+
+        {/* Variantes */}
         <Card>
-          <CardHeader className="flex-row justify-between items-center">
-            <CardTitle>Variantes (obligatoires – au moins 1)</CardTitle>
-            <Button type="button" variant="outline" onClick={() => addVariant()}>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Variantes (optionnel)</CardTitle>
+            <Button type="button" variant="outline" onClick={addVariant}>
               <Plus className="mr-2 h-4 w-4" /> Ajouter variante
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="space-y-10">
-              {variants.map((v, idx) => (
-                <div key={idx} className="relative border rounded-lg p-5 bg-muted/30">
-                  {variants.length > 1 && (
+            {variants.length === 0 ? (
+              <p className="text-center py-6 text-muted-foreground">
+                Pas de variantes → le produit utilisera les images globales et le stock global
+              </p>
+            ) : (
+              <div className="space-y-8">
+                {variants.map((variant, idx) => (
+                  <div key={idx} className="border rounded-lg p-5 relative bg-muted/30">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute top-3 right-3 text-red-600"
+                      className="absolute top-3 right-3 text-red-600 hover:text-red-700"
                       onClick={() => removeVariant(idx)}
                     >
                       <Trash2 className="h-5 w-5" />
                     </Button>
-                  )}
 
-                  <div className="grid gap-4 md:grid-cols-5 mb-6">
-                    <div>
-                      <Label>Nom *</Label>
-                      <Input value={v.name} onChange={e => updateVariant(idx, 'name', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>SKU *</Label>
-                      <Input value={v.sku} onChange={e => updateVariant(idx, 'sku', e.target.value)} />
-                    </div>
-                    <div>
-                      <Label>Prix (DA) *</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={v.price}
-                        onChange={e => updateVariant(idx, 'price', Number(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div>
-                      <Label>Stock</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={v.stock}
-                        onChange={e => updateVariant(idx, 'stock', Number(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={v.isDefault}
-                          onChange={e => updateVariant(idx, 'isDefault', e.target.checked)}
+                    <div className="grid gap-4 md:grid-cols-5 mb-6">
+                      <div>
+                        <Label>Nom *</Label>
+                        <Input
+                          value={variant.name}
+                          onChange={(e) => updateVariant(idx, 'name', e.target.value)}
+                          required
                         />
-                        <span className="text-sm">Par défaut</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Images de cette variante (max 5)</Label>
-                    <div className="mt-2 flex items-center gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => document.getElementById(`upload-${idx}`)?.click()}
-                      >
-                        <Upload className="mr-2 h-4 w-4" /> Ajouter
-                      </Button>
-                      <input
-                        id={`upload-${idx}`}
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        className="hidden"
-                        onChange={e => handleVariantImageChange(e, idx)}
-                      />
-                    </div>
-
-                    {v.images.length > 0 && (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 mt-4">
-                        {v.images.map((img, i) => (
-                          <div key={i} className="relative group">
-                            <img src={img.preview} alt="" className="h-24 w-full object-cover rounded border" />
-                            <Button
-                              variant="destructive"
-                              size="icon"
-                              className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100"
-                              onClick={() => removeVariantImage(idx, i)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
                       </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                      <div>
+                        <Label>SKU *</Label>
+                        <Input
+                          value={variant.sku}
+                          onChange={(e) => updateVariant(idx, 'sku', e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label>Prix *</Label>
+                          <Input
+                            type="number"
+                            value={variant.price}
+                            min={0}
+                            required
+                            onChange={(e) =>
+                              updateVariant(idx, 'price', Number(e.target.value) || 0)
+                            }
+                          />
+                      </div>
+                      <div>
+                        <Label>Stock</Label>
+                        <Input
+                          type="number"
+                          value={variant.stock}
+                          onChange={(e) => updateVariant(idx, 'stock', Number(e.target.value) || 0)}
+                          min={0}
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id={`default-${idx}`}
+                            checked={variant.isDefault}
+                            onChange={(e) => updateVariant(idx, 'isDefault', e.target.checked)}
+                          />
+                          <Label htmlFor={`default-${idx}`}>Par défaut</Label>
+                        </div>
+                      </div>
+                    </div>
 
-        {/* Specs */}
-        <Card>
-          <CardHeader className="flex-row justify-between items-center">
-            <CardTitle>Caractéristiques (optionnel)</CardTitle>
-            <Button type="button" variant="outline" onClick={addSpec}>
-              <Plus className="mr-2 h-4 w-4" /> Ajouter
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {specs.length === 0 ? (
-              <p className="text-center py-10 text-muted-foreground">Ex : Couleur, Taille, Matériau...</p>
-            ) : (
-              <div className="space-y-5">
-                {specs.map((s, i) => (
-                  <div key={i} className="flex gap-4 items-end">
-                    <div className="flex-1">
-                      <Label>Clé</Label>
-                      <Input value={s.key} onChange={e => updateSpec(i, 'key', e.target.value)} />
+                    {/* Images spécifiques à la variante */}
+                    <div className="mt-6">
+                      <Label>Images de cette variante (max 5)</Label>
+                      <div className="flex items-center gap-3 mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => document.getElementById(`variant-upload-${idx}`)?.click()}
+                        >
+                          <Upload className="mr-2 h-4 w-4" /> Ajouter
+                        </Button>
+                        <input
+                          id={`variant-upload-${idx}`}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => handleVariantImageChange(e, idx)}
+                        />
+                      </div>
+
+                      {variant.images.length > 0 && (
+                        <div className="grid grid-cols-4 sm:grid-cols-5 gap-3 mt-4">
+                          {variant.images.map((img, imgIdx) => (
+                            <div key={imgIdx} className="relative group">
+                              <img
+                                src={img.preview}
+                                alt="Variante"
+                                className="h-24 w-full object-cover rounded border"
+                              />
+                              <Button
+                                variant="destructive"
+                                size="icon"
+                                className="absolute -top-2 -right-2 h-6 w-6 opacity-0 group-hover:opacity-100"
+                                onClick={() => removeVariantImage(idx, imgIdx)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <Label>Valeur</Label>
-                      <Input value={s.value} onChange={e => updateSpec(i, 'value', e.target.value)} />
-                    </div>
-                    <Button variant="ghost" size="icon" className="mb-2 text-red-600" onClick={() => removeSpec(i)}>
-                      <Trash2 className="h-5 w-5" />
-                    </Button>
                   </div>
                 ))}
               </div>
@@ -411,17 +435,25 @@ export default function ProductCreate() {
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-4 pt-8">
-          <Button type="button" variant="outline" onClick={() => navigate('/products')} disabled={submitting || uploading}>
+        {/* Boutons d'action */}
+        <div className="flex justify-end gap-4 pt-10">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate('/products')}
+            disabled={submitting || uploading}
+          >
             Annuler
           </Button>
-          <Button type="submit" disabled={submitting || uploading}>
+          <Button type="submit" disabled={submitting || uploading }>
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Création…
+                Création en cours...
               </>
-            ) : 'Créer produit'}
+            ) : (
+              'Créer le produit'
+            )}
           </Button>
         </div>
       </form>
