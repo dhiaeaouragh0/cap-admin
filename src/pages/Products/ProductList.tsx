@@ -55,7 +55,7 @@ interface Product {
   basePrice: number;
   discount: number;
   brand?: string;
-  images: string[];
+  // images: string[];
   variants: Variant[];
   stock?: number;
   specs?: Record<string, string>;
@@ -302,13 +302,6 @@ export default function ProductList() {
                       <TableHead>
                         <div className="flex items-center gap-2 whitespace-nowrap">
                           <span>Stock total</span>
-                          {/* <input
-                            type="checkbox"
-                            id="inStockOnly"
-                            checked={inStockOnly}
-                            onChange={(e) => setInStockOnly(e.target.checked)}
-                            className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
-                          /> */}
                           <Switch
                             className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
                             id="inStockOnly"
@@ -329,9 +322,9 @@ export default function ProductList() {
                     {products.map((product) => (
                       <TableRow key={product._id} className="hover:bg-muted/50">
                         <TableCell>
-                          {product.images?.[0] ? (
+                          {product.variants[0].images?.[0]? (
                             <img
-                              src={product.images[0]}
+                              src={product.variants[0].images[0]}
                               alt={product.name}
                               className="h-12 w-12 rounded object-cover border"
                               onError={(e) => (e.currentTarget.src = '/placeholder.png')} 

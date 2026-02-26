@@ -53,7 +53,7 @@ export default function ProductCreate() {
 
   // Images globales (produit)
 
-  const [uploading, setUploading] = useState(false);
+  const [uploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Générer slug en temps réel

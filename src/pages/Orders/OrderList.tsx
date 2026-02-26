@@ -43,6 +43,7 @@ interface Order {
   _id: string;
   product: ProductPopulated;
   variantName?: string | null;
+  variantSku?: string | null;           // ← AJOUTÉ
   quantity: number;
   customerName: string;
   customerPhone: string;
@@ -51,7 +52,7 @@ interface Order {
   deliveryType: 'domicile' | 'agence';
   address: string;
   note?: string;
-  productPrice: number;
+  unitPrice: number;
   shippingFee: number;
   totalPrice: number;
   status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
@@ -83,13 +84,8 @@ export default function OrderList() {
         sort: '-createdAt',
       };
 
-      if (statusFilter !== 'all') {
-        params.status = statusFilter;
-      }
-
-      if (searchTerm.trim()) {
-        params.search = searchTerm.trim();
-      }
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (searchTerm.trim()) params.search = searchTerm.trim();
 
       const res = await api.get('/orders', { params });
       setOrders(res.data.orders || res.data || []);
@@ -108,17 +104,15 @@ export default function OrderList() {
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
       setUpdatingId(orderId);
-
       await api.put(`/orders/${orderId}/status`, { status: newStatus });
 
       toast.success('Statut mis à jour');
-      setOrders((prev: Order[]) =>
+      setOrders((prev) =>
         prev.map((o) =>
           o._id === orderId ? { ...o, status: newStatus as Order['status'] } : o
         )
       );
 
-      // Update selected order if open
       if (selectedOrder?._id === orderId) {
         setSelectedOrder((prev) => prev ? { ...prev, status: newStatus as Order['status'] } : null);
       }
@@ -209,85 +203,84 @@ export default function OrderList() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {orders.map((order) => {
-                    const StatusIcon = statusConfig[order.status]?.icon || Clock;
+                  {orders.map((order) => (
+                    <TableRow
+                      key={order._id}
+                      className="hover:bg-muted/50 cursor-pointer"
+                      onClick={() => setSelectedOrder(order)}
+                    >
+                      <TableCell>
+                        <div className="font-medium">{order.customerName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {order.customerPhone}
+                        </div>
+                      </TableCell>
 
-                    return (
-                      <TableRow
-                        key={order._id}
-                        className="hover:bg-muted/50 cursor-pointer"
-                        onClick={() => setSelectedOrder(order)}
-                      >
-                        <TableCell>
-                          <div className="font-medium">{order.customerName}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {order.customerPhone}
+                      <TableCell>
+                        <div className="font-medium">
+                          {order.product?.name || 'Produit supprimé'}
+                        </div>
+                        {(order.variantName || order.variantSku) && (
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {order.variantName && `Variante : ${order.variantName}`}
+                            {order.variantName && order.variantSku && ' • '}
+                            {order.variantSku && (
+                              <>
+                                SKU: <span className="font-mono font-medium">{order.variantSku}</span>
+                              </>
+                            )}
                           </div>
-                        </TableCell>
+                        )}
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          × {order.quantity}
+                        </div>
+                      </TableCell>
 
-                        <TableCell>
-                          <div className="font-medium">
-                            {order.product?.name || 'Produit supprimé'}
-                          </div>
-                          {order.variantName && (
-                            <div className="text-xs text-muted-foreground">
-                              Variante : {order.variantName}
-                            </div>
-                          )}
-                          <div className="text-xs text-muted-foreground">
-                            × {order.quantity}
-                          </div>
-                        </TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {order.totalPrice.toLocaleString()} DA
+                      </TableCell>
 
-                        <TableCell className="font-medium whitespace-nowrap">
-                          {order.totalPrice.toLocaleString()} DA
-                        </TableCell>
+                      <TableCell>
+                        <div>{order.wilaya}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {order.deliveryType === 'domicile' ? 'Domicile' : 'Agence'}
+                        </div>
+                      </TableCell>
 
-                        <TableCell>
-                          <div>{order.wilaya}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {order.deliveryType === 'domicile' ? 'Domicile' : 'Agence'}
-                          </div>
-                        </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const status = statusConfig[order.status];
+                          if (!status) return null;
+                          const Icon = status.icon;
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-medium ${status.color}`}
+                            >
+                              <Icon className="h-4 w-4" />
+                              {status.label}
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
 
-                        <TableCell>
-                          {(() => {
-                            const status = statusConfig[order.status];
-                            if (!status) return null;
+                      <TableCell>
+                        {format(new Date(order.createdAt), 'dd MMM yyyy HH:mm', { locale: fr })}
+                      </TableCell>
 
-                            const Icon = status.icon;
-
-                            return (
-                              <span
-                                className={`inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-medium ${status.color}`}
-                              >
-                                <Icon className="h-4 w-4" />
-                                {status.label}
-                              </span>
-                            );
-                          })()}
-                        </TableCell>
-
-
-                        <TableCell>
-                          {format(new Date(order.createdAt), 'dd MMM yyyy HH:mm', { locale: fr })}
-                        </TableCell>
-
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation(); // prevent row click
-                              setSelectedOrder(order);
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedOrder(order);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -325,26 +318,45 @@ export default function OrderList() {
                   <CardTitle className="text-lg">Détails de la commande</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
                       <strong>Produit :</strong><br />
                       {selectedOrder.product?.name || 'Produit supprimé'}
-                      {selectedOrder.variantName && ` (${selectedOrder.variantName})`}
+                      {(selectedOrder.variantName || selectedOrder.variantSku) && (
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          {selectedOrder.variantName && (
+                            <>Variante : {selectedOrder.variantName}</>
+                          )}
+                          {selectedOrder.variantName && selectedOrder.variantSku && ' • '}
+                          {selectedOrder.variantSku && (
+                            <>
+                              SKU : <span className="font-mono font-medium">{selectedOrder.variantSku}</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <strong>Quantité :</strong> {selectedOrder.quantity}<br />
-                      <strong>Prix unitaire :</strong> {selectedOrder.productPrice.toLocaleString()} DA
+
+                    <div className="space-y-2">
+                      <div>
+                        <strong>Quantité :</strong> {selectedOrder.quantity}
+                      </div>
+                      <div>
+                        <strong>Prix unitaire :</strong> {selectedOrder.unitPrice.toLocaleString()} DA
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 border-t pt-4">
                     <div>
                       <strong>Livraison :</strong><br />
                       {selectedOrder.wilaya} – {selectedOrder.deliveryType === 'domicile' ? 'À domicile' : 'En agence'}
                     </div>
                     <div>
-                      <strong>Frais livraison :</strong> {selectedOrder.shippingFee.toLocaleString()} DA<br />
-                      {selectedOrder.shippingFee === 0 && <span className="text-green-600 text-xs">(Gratuite)</span>}
+                      <strong>Frais livraison :</strong> {selectedOrder.shippingFee.toLocaleString()} DA
+                      {selectedOrder.shippingFee === 0 && (
+                        <span className="text-green-600 text-xs ml-2">(Gratuite)</span>
+                      )}
                     </div>
                   </div>
 
@@ -368,7 +380,7 @@ export default function OrderList() {
               </Card>
 
               {/* Status */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-4">
                 <div>
                   <strong>Statut actuel :</strong>{' '}
                   {getStatusBadge(selectedOrder.status)}
