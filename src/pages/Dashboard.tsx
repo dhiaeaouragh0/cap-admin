@@ -358,7 +358,7 @@ export default function Dashboard() {
                     <TableRow
                       key={order._id}
                       className="cursor-pointer hover:bg-muted/60 transition-colors"
-                      onClick={() => navigate(`/orders/${order._id}`)}
+                      onClick={() => navigate(`/orders`)}
                     >
                       <TableCell className="font-medium">
                         {order.customerName}
