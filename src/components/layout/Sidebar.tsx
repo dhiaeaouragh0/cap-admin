@@ -56,7 +56,7 @@ export default function Sidebar() {
         <div className="flex flex-col h-full">
           {/* Header */}
           <div className="p-6 border-b">
-            <h2 className="text-xl font-bold">DZ Game Zone Admin</h2>
+            <h2 className="text-xl font-bold">Admin Panel</h2>
           </div>
 
           {/* Navigation */}
