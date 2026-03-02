@@ -290,7 +290,12 @@ export default function OrderList() {
 
       {/* Order Details Modal */}
       <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="
+    max-w-[95vw] sm:max-w-3xl 
+    max-h-[92vh] sm:max-h-[90vh]
+    overflow-y-auto overscroll-contain
+    p-4 sm:p-6
+  ">
           <DialogHeader>
             <DialogTitle>Commande #{selectedOrder?._id?.slice(-6)}</DialogTitle>
             <DialogDescription>

@@ -327,7 +327,7 @@ export default function Dashboard() {
             <CardDescription>Dernières 6 commandes</CardDescription>
           </div>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/orders">Voir toutes les commandes</Link>
+            <Link to="/orders">Voir toutes</Link>
           </Button>
         </CardHeader>
         <CardContent>
