@@ -12,13 +12,9 @@ import ProductEdit from './pages/Products/ProductEdit';
 import OrderList from './pages/Orders/OrderList';
 import Wilayas from './pages/Wilayas';
 import UsersManagement from './pages/UsersManagement';
+import { useUserRole } from './hooks/useUserRole';
 
 const queryClient = new QueryClient();
-
-// Helper pour lire le rôle de façon propre et à jour
-function getUserRole() {
-  return localStorage.getItem('userRole') || 'confirmateur';
-}
 
 function AppLayout() {
   return (
@@ -32,21 +28,23 @@ function AppLayout() {
 }
 
 function App() {
+  const role = useUserRole();  // ← reactive value from hook
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          {/* Page publique */}
+          {/* Public */}
           <Route path="/login" element={<Login />} />
 
-          {/* Toutes les routes protégées */}
+          {/* Protected routes */}
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
-              {/* Racine : redirection selon rôle */}
+              {/* Root: redirect based on current role */}
               <Route
                 path="/"
                 element={
-                  getUserRole() === 'admin' ? (
+                  role === 'admin' ? (
                     <Navigate to="/dashboard" replace />
                   ) : (
                     <Navigate to="/orders" replace />
@@ -54,33 +52,25 @@ function App() {
                 }
               />
 
-              {/* Routes communes (admin + confirmateur) */}
+              {/* Shared routes */}
               <Route path="/products" element={<ProductList />} />
               <Route path="/products/new" element={<ProductCreate />} />
               <Route path="/products/edit/:id" element={<ProductEdit />} />
               <Route path="/orders" element={<OrderList />} />
               <Route path="/wilayas" element={<Wilayas />} />
 
-              {/* Routes réservées ADMIN UNIQUEMENT */}
+              {/* Admin-only routes */}
               <Route
                 path="/dashboard"
                 element={
-                  getUserRole() === 'admin' ? (
-                    <Dashboard />
-                  ) : (
-                    <Navigate to="/orders" replace />
-                  )
+                  role === 'admin' ? <Dashboard /> : <Navigate to="/orders" replace />
                 }
               />
 
               <Route
                 path="/users"
                 element={
-                  getUserRole() === 'admin' ? (
-                    <UsersManagement />
-                  ) : (
-                    <Navigate to="/orders" replace />
-                  )
+                  role === 'admin' ? <UsersManagement /> : <Navigate to="/orders" replace />
                 }
               />
             </Route>

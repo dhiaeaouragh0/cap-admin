@@ -21,25 +21,30 @@ export default function Login() {
     }
   }, [navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  // src/pages/Login.tsx (version corrigée)
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      const { data } = await api.post('/auth/login', { email, password });
+  try {
+    const { data } = await api.post('/auth/login', { email, password });
 
-      // Stockage du token ET du rôle (simple et propre)
-      localStorage.setItem('adminToken', data.token);
-      localStorage.setItem('userRole', data.user.role); // ← clé importante
+    localStorage.setItem('adminToken', data.token);
+    localStorage.setItem('userRole', data.user.role);
 
-      toast.success(`Bienvenue ${data.user.role === 'admin' ? 'Administrateur' : 'Confirmateur'} !`);
-      navigate('/dashboard', { replace: true });
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Échec de connexion');
-    } finally {
-      setLoading(false);
-    }
-  };
+    toast.success(`Bienvenue ${data.user.role === 'admin' ? 'Administrateur' : 'Confirmateur'} !`);
+
+    // PAS de navigate ici → on laisse App.tsx gérer
+    // On peut juste recharger pour simplicité (mais pas obligatoire)
+    window.location.href = '/';   // ← option 1 : reload léger
+    // OU : rien du tout → le hook va déclencher la bonne redirection
+
+  } catch (err: any) {
+    toast.error(err.response?.data?.message || 'Échec de connexion');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40">
