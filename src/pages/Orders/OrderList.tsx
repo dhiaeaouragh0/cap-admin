@@ -26,12 +26,12 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Search, Eye, CheckCircle2, Truck, PackageCheck, XCircle, Clock } from 'lucide-react';
+import { Loader2, Search, Eye, CheckCircle2, Truck, PackageCheck, XCircle, Clock, Edit, Save, ChevronRight, ChevronLeft } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-
+import { cn } from '@/lib/utils';
 // ──────────────────────────────────────────────── Types
 interface ProductPopulated {
   _id: string;
@@ -39,11 +39,26 @@ interface ProductPopulated {
   slug: string;
 }
 
+interface HistoryEntry {
+  date: string;
+  changedBy: string; // ID ou nom si populated, mais pour l'instant string
+  role: string;
+}
+
+interface PriceHistoryEntry extends HistoryEntry {
+  oldPrice: number;
+  newPrice: number;
+}
+
+interface StatusHistoryEntry extends HistoryEntry {
+  status: string;
+}
+
 interface Order {
   _id: string;
   product: ProductPopulated;
   variantName?: string | null;
-  variantSku?: string | null;           // ← AJOUTÉ
+  variantSku?: string | null;
   quantity: number;
   customerName: string;
   customerPhone: string;
@@ -58,6 +73,10 @@ interface Order {
   status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
   createdAt: string;
   updatedAt: string;
+  priceHistory: PriceHistoryEntry[];
+  statusHistory: StatusHistoryEntry[];
+  confirmedBy?: string;
+  confirmedAt?: string;
 }
 
 const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
@@ -68,19 +87,34 @@ const statusConfig: Record<string, { label: string; color: string; icon: any }> 
   cancelled: { label: 'Annulée',      color: 'bg-red-100 text-red-800 border-red-300',     icon: XCircle },
 };
 
+interface Pagination {
+  currentPage: number;
+  totalPages: number;
+  totalOrders: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+  limit: number; // we'll assume backend sends it or we hardcode 10/20
+}
 export default function OrderList() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [newTotalPrice, setNewTotalPrice] = useState<number | null>(null);
 
-  const fetchOrders = async () => {
+  const limit = 8; // ← adjust as needed (or make dynamic)
+
+  const fetchOrders = async (pageNum: number = 1) => {
     try {
       setLoading(true);
       const params: any = {
-        limit: 20,
+        page: pageNum,
+        limit,
         sort: '-createdAt',
       };
 
@@ -88,7 +122,18 @@ export default function OrderList() {
       if (searchTerm.trim()) params.search = searchTerm.trim();
 
       const res = await api.get('/orders', { params });
-      setOrders(res.data.orders || res.data || []);
+      const data = res.data;
+
+      setOrders(data.orders || []);
+      setPagination({
+        currentPage: data.currentPage || pageNum,
+        totalPages: data.totalPages || 1,
+        totalOrders: data.totalOrders || 0,
+        hasNextPage: data.hasNextPage || false,
+        hasPrevPage: data.hasPrevPage || false,
+        limit: data.limit || limit,
+      });
+      setPage(pageNum);
     } catch (err: any) {
       console.error('Orders fetch error:', err);
       toast.error('Impossible de charger les commandes');
@@ -98,23 +143,22 @@ export default function OrderList() {
   };
 
   useEffect(() => {
-    fetchOrders();
+    fetchOrders(1); // reset to page 1 when filters change
   }, [statusFilter, searchTerm]);
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
       setUpdatingId(orderId);
-      await api.put(`/orders/${orderId}/status`, { status: newStatus });
-
+      const res = await api.put(`/orders/${orderId}/status`, { status: newStatus });
       toast.success('Statut mis à jour');
       setOrders((prev) =>
         prev.map((o) =>
-          o._id === orderId ? { ...o, status: newStatus as Order['status'] } : o
+          o._id === orderId ? { ...o, ...res.data } : o  // Mise à jour complète avec histoire
         )
       );
 
       if (selectedOrder?._id === orderId) {
-        setSelectedOrder((prev) => prev ? { ...prev, status: newStatus as Order['status'] } : null);
+        setSelectedOrder(res.data);
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Erreur mise à jour statut');
@@ -122,6 +166,70 @@ export default function OrderList() {
       setUpdatingId(null);
     }
   };
+
+  const handlePriceChange = async (orderId: string) => {
+    if (newTotalPrice === null || newTotalPrice < 0) {
+      toast.error('Prix invalide');
+      return;
+    }
+
+    try {
+      setUpdatingId(orderId);
+      const res = await api.put(`/orders/${orderId}/price`, { newTotalPrice });
+      toast.success('Prix mis à jour');
+      setOrders((prev) =>
+        prev.map((o) =>
+          o._id === orderId ? { ...o, ...res.data } : o  // Mise à jour avec histoire
+        )
+      );
+
+      if (selectedOrder?._id === orderId) {
+        setSelectedOrder(res.data);
+      }
+      setEditingPrice(false);
+      setNewTotalPrice(null);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Erreur mise à jour prix');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+   // Generate visible page numbers (e.g. show 5 pages around current)
+  const getPageNumbers = () => {
+    if (!pagination) return [];
+    const { currentPage: curr, totalPages } = pagination;
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+    let l;
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (
+        i === 1 ||
+        i === totalPages ||
+        (i >= curr - delta && i <= curr + delta)
+      ) {
+        range.push(i);
+      }
+    }
+
+    for (let i of range) {
+      if (l) {
+        if (i - l === 2) {
+          rangeWithDots.push(l + 1);
+        } else if (i - l !== 1) {
+          rangeWithDots.push('...');
+        }
+      }
+      rangeWithDots.push(i);
+      l = i;
+    }
+
+    return rangeWithDots;
+  };
+
+  const pageNumbers = getPageNumbers();
 
   const getStatusBadge = (status: string) => {
     const config = statusConfig[status] || { color: 'bg-gray-100', icon: Clock };
@@ -247,21 +355,7 @@ export default function OrderList() {
                         </div>
                       </TableCell>
 
-                      <TableCell>
-                        {(() => {
-                          const status = statusConfig[order.status];
-                          if (!status) return null;
-                          const Icon = status.icon;
-                          return (
-                            <span
-                              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-medium ${status.color}`}
-                            >
-                              <Icon className="h-4 w-4" />
-                              {status.label}
-                            </span>
-                          );
-                        })()}
-                      </TableCell>
+                      <TableCell>{getStatusBadge(order.status)}</TableCell>
 
                       <TableCell>
                         {format(new Date(order.createdAt), 'dd MMM yyyy HH:mm', { locale: fr })}
@@ -285,6 +379,66 @@ export default function OrderList() {
               </Table>
             </div>
           )}
+          {pagination && pagination.totalPages > 1 && (
+                <div className="flex items-center justify-between border-t px-4 py-4 sm:px-6">
+                  <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Affichage de{' '}
+                      <span className="font-medium">
+                        {(pagination.currentPage - 1) * limit + 1}
+                      </span>{' '}
+                      à{' '}
+                      <span className="font-medium">
+                        {Math.min(pagination.currentPage * limit, pagination.totalOrders)}
+                      </span>{' '}
+                      sur <span className="font-medium">{pagination.totalOrders}</span> commandes
+                    </p>
+
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchOrders(pagination.currentPage - 1)}
+                        disabled={!pagination.hasPrevPage || loading}
+                      >
+                        <ChevronLeft className="h-4 w-4 mr-1" />
+                        Précédent
+                      </Button>
+
+                      <div className="flex space-x-1">
+                        {pageNumbers.map((pageNum, idx) => (
+                          <Button
+                            key={idx}
+                            variant={pageNum === pagination.currentPage ? 'default' : 'outline'}
+                            size="sm"
+                            className={cn(
+                              pageNum === '...' && 'cursor-default hover:bg-transparent'
+                            )}
+                            disabled={pageNum === '...' || loading}
+                            onClick={() => {
+                              if (typeof pageNum === 'number') {
+                                fetchOrders(pageNum);
+                              }
+                            }}
+                          >
+                            {pageNum}
+                          </Button>
+                        ))}
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchOrders(pagination.currentPage + 1)}
+                        disabled={!pagination.hasNextPage || loading}
+                      >
+                        Suivant
+                        <ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
         </CardContent>
       </Card>
 
@@ -365,9 +519,50 @@ export default function OrderList() {
                     </div>
                   </div>
 
-                  <div className="border-t pt-4">
+                  <div className="border-t pt-4 flex items-center gap-4">
                     <strong>Total à payer :</strong>{' '}
-                    <span className="text-xl font-bold">{selectedOrder.totalPrice.toLocaleString()} DA</span>
+                    {editingPrice ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={newTotalPrice ?? selectedOrder.totalPrice}
+                          onChange={(e) => setNewTotalPrice(parseFloat(e.target.value))}
+                          className="w-32"
+                          min={0}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handlePriceChange(selectedOrder._id)}
+                          disabled={updatingId === selectedOrder._id}
+                        >
+                          <Save className="h-4 w-4 mr-1" /> Sauvegarder
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingPrice(false);
+                            setNewTotalPrice(null);
+                          }}
+                        >
+                          Annuler
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-xl font-bold">{selectedOrder.totalPrice.toLocaleString()} DA</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setEditingPrice(true);
+                            setNewTotalPrice(selectedOrder.totalPrice);
+                          }}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
 
                   {selectedOrder.note && (
@@ -385,29 +580,81 @@ export default function OrderList() {
               </Card>
 
               {/* Status */}
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div>
-                  <strong>Statut actuel :</strong>{' '}
-                  {getStatusBadge(selectedOrder.status)}
-                </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">Statut</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
+                    <div>
+                      <strong>Statut actuel :</strong>{' '}
+                      {getStatusBadge(selectedOrder.status)}
+                    </div>
 
-                <Select
-                  value={selectedOrder.status}
-                  onValueChange={(newStatus) => handleStatusChange(selectedOrder._id, newStatus)}
-                  disabled={updatingId === selectedOrder._id}
-                >
-                  <SelectTrigger className="w-44">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">En attente</SelectItem>
-                    <SelectItem value="confirmed">Confirmée</SelectItem>
-                    <SelectItem value="shipped">Expédiée</SelectItem>
-                    <SelectItem value="delivered">Livrée</SelectItem>
-                    <SelectItem value="cancelled">Annulée</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                    <Select
+                      value={selectedOrder.status}
+                      onValueChange={(newStatus) => handleStatusChange(selectedOrder._id, newStatus)}
+                      disabled={updatingId === selectedOrder._id}
+                    >
+                      <SelectTrigger className="w-44">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">En attente</SelectItem>
+                        <SelectItem value="confirmed">Confirmée</SelectItem>
+                        <SelectItem value="shipped">Expédiée</SelectItem>
+                        <SelectItem value="delivered">Livrée</SelectItem>
+                        <SelectItem value="cancelled">Annulée</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {selectedOrder.confirmedAt && (
+                    <div className="text-sm mb-4">
+                      <strong>Confirmée le :</strong> {format(new Date(selectedOrder.confirmedAt), 'dd MMMM yyyy à HH:mm', { locale: fr })}
+                    </div>
+                  )}
+
+                  {/* Status History */}
+                  {selectedOrder.statusHistory?.length > 0 && (
+                    <div className="border-t pt-4">
+                      <strong>Historique des statuts :</strong>
+                      <ul className="mt-2 space-y-2 text-sm">
+                        {selectedOrder.statusHistory.map((entry, index) => (
+                          <li key={index} className="flex justify-between">
+                            <span>{statusConfig[entry.status]?.label || entry.status}</span>
+                            <span className="text-muted-foreground">
+                              {format(new Date(entry.date), 'dd MMM HH:mm', { locale: fr })} par {entry.role} ({entry.changedBy.slice(-6)})
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Price History */}
+              {selectedOrder.priceHistory?.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">Historique des prix</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2 text-sm">
+                      {selectedOrder.priceHistory.map((entry, index) => (
+                        <li key={index} className="flex justify-between">
+                          <span>{entry.oldPrice.toLocaleString()} DA → {entry.newPrice.toLocaleString()} DA</span>
+                          <span className="text-muted-foreground">
+                            {format(new Date(entry.date), 'dd MMM HH:mm', { locale: fr })} par {entry.role} ({entry.changedBy.slice(-6)})
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+              
             </div>
           )}
 

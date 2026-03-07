@@ -11,6 +11,7 @@ import {
   X,
   Sun,
   Moon,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/lib/theme';
@@ -19,24 +20,38 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 
 const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/products', label: 'Products', icon: Package },
-  { to: '/orders', label: 'Orders', icon: ShoppingCart },
-  { to: '/wilayas', label: 'Wilayas Shipping', icon: MapPin },
+  { to: '/dashboard', label: 'Dashboard',          icon: LayoutDashboard },
+  { to: '/products',  label: 'Produits',           icon: Package },
+  { to: '/orders',    label: 'Commandes',          icon: ShoppingCart },
+  { to: '/wilayas',   label: 'Wilayas & Livraison', icon: MapPin },
+  { to: '/users',     label: 'Gestion utilisateurs', icon: UserCog },
 ];
 
 export default function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
+  const role = localStorage.getItem('userRole') || 'confirmateur'; 
+
+  // Liste des routes interdites pour les confirmateurs
+  const restrictedForConfirmateur = ['/dashboard', '/users'];
+
+  // Filtrer les items visibles selon le rôle
+  const visibleItems = navItems.filter(item => {
+    if (role !== 'admin') {
+      return !restrictedForConfirmateur.includes(item.to);
+    }
+    return true;
+  });
+
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
+    localStorage.removeItem('userRole');
     window.location.href = '/login';
   };
 
   return (
     <>
-      {/* Mobile Hamburger Button */}
       <Button
         variant="ghost"
         size="icon"
@@ -46,7 +61,6 @@ export default function Sidebar() {
         {isMobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
       </Button>
 
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 w-72 bg-card border-r transform transition-transform duration-300 lg:translate-x-0 lg:static lg:inset-auto",
@@ -54,19 +68,17 @@ export default function Sidebar() {
         )}
       >
         <div className="flex flex-col h-full">
-          {/* Header */}
           <div className="p-6 border-b">
             <h2 className="text-xl font-bold">Admin Panel</h2>
           </div>
 
-          {/* Navigation */}
           <nav className="flex-1 p-4 overflow-y-auto">
             <ul className="space-y-1">
-              {navItems.map((item) => (
+              {visibleItems.map((item) => (
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
-                    onClick={() => setIsMobileOpen(false)} // close on mobile click
+                    onClick={() => setIsMobileOpen(false)}
                     className={({ isActive }) =>
                       cn(
                         "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
@@ -81,19 +93,20 @@ export default function Sidebar() {
                   </NavLink>
                 </li>
               ))}
+
+              {/* Optionnel : message pour les confirmateurs si sidebar très vide */}
+              {visibleItems.length === 0 && role !== 'admin' && (
+                <li className="text-sm text-muted-foreground px-3 py-6 text-center">
+                  Espace réservé aux administrateurs
+                </li>
+              )}
             </ul>
           </nav>
 
-          {/* Footer: Dark mode + Logout */}
           <div className="p-4 border-t mt-auto">
-            {/* Dark Mode Toggle */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                {theme === 'dark' ? (
-                  <Moon className="h-4 w-4" />
-                ) : (
-                  <Sun className="h-4 w-4" />
-                )}
+                {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                 <Label htmlFor="dark-mode" className="cursor-pointer text-sm">
                   Mode sombre
                 </Label>
@@ -105,10 +118,9 @@ export default function Sidebar() {
               />
             </div>
 
-            {/* Logout */}
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-red-600 hover:bg-red-50/80 dark:hover:bg-red-950/50 w-full transition-colors"
+              className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-red-600 hover:bg-red-50/80 dark:hover:bg-red-950/50 w-full justify-start transition-colors"
             >
               <LogOut className="h-5 w-5" />
               Déconnexion
@@ -117,7 +129,6 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Mobile overlay */}
       {isMobileOpen && (
         <div
           className="fixed inset-0 bg-black/60 z-30 lg:hidden"
