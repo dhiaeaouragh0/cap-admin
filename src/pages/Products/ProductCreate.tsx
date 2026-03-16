@@ -18,17 +18,21 @@ interface VariantImage {
   preview: string;
 }
 
-interface Variant {
+interface OptionType {
   name: string;
+  displayName: string;
+  values: string[];
+}
+
+interface Variant {
   sku: string;
   price: number;
   stock: number;
   isDefault: boolean;
-  images: VariantImage[];           // images locales pour preview
-  uploadedImageUrls: string[];      // URLs après upload backend
+  attributes: Record<string, string>;    // color: "Noir", size: "M", ...
+  images: VariantImage[];                // local previews
+  uploadedImageUrls: string[];           // final URLs after upload
 }
-
-
 
 export default function ProductCreate() {
   const navigate = useNavigate();
@@ -39,21 +43,24 @@ export default function ProductCreate() {
   const [description, setDescription] = useState('');
   const [brand, setBrand] = useState('');
   const [isFeatured, setIsFeatured] = useState(false);
+
+  const [optionTypes, setOptionTypes] = useState<OptionType[]>([]);
+  const [newOptionName, setNewOptionName] = useState('');
+  const [newOptionDisplayName, setNewOptionDisplayName] = useState('');
+  const [newOptionValue, setNewOptionValue] = useState('');
+
   const [variants, setVariants] = useState<Variant[]>([
     {
-      name: '',
       sku: '',
       price: 0,
       stock: 0,
-      isDefault: true, // ← première variante par défaut
+      isDefault: true,
+      attributes: {},
       images: [],
       uploadedImageUrls: [],
     },
   ]);
 
-  // Images globales (produit)
-
-  const [uploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Générer slug en temps réel
@@ -71,18 +78,112 @@ export default function ProductCreate() {
       setSlug('');
     }
   }, [name]);
+  useEffect(() => {
+  setVariants(prevVariants => {
+    let hasChange = false;
 
+    const newVariants = prevVariants.map((v) => {
+      const suggested = generateSKU(v, name, brand);
+      if (v.sku !== suggested) {
+        hasChange = true;
+        return { ...v, sku: suggested };
+      }
+      return v;
+    });
 
-  // ── Variantes ──────────────────────────────────────────
+    // Only return new array if something actually changed → avoids unnecessary re-renders
+    return hasChange ? newVariants : prevVariants;
+  });
+}, [name, brand, optionTypes, ...variants.map(v => JSON.stringify(v.attributes))]); // deep dep on attributes
+
+// Helper to generate short code from string (e.g. "Noir" → "NOI", "Large" → "L")
+const getShortCode = (str: string, length = 3): string => {
+  if (!str) return '';
+  return str
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, length);
+};
+
+  // Auto-generate SKU suggestion
+  const generateSKU = (variant: Variant, productName: string, brand?: string): string => {
+    if (!productName.trim()) return '';
+
+    // Base: brand or first letters of product name
+    const base = brand?.trim()
+      ? getShortCode(brand, 3)
+      : getShortCode(productName, 4);
+
+    // Attributes part
+    const attrParts = optionTypes
+      .map(opt => {
+        const val = variant.attributes[opt.name];
+        return val ? getShortCode(val, opt.name === 'size' ? 2 : 4) : '';
+      })
+      .filter(Boolean);
+
+    if (attrParts.length === 0) {
+      return `${base}-${getShortCode(productName.split(' ')[0], 4)}`.replace(/-+/g, '-');
+    }
+
+    return `${base}-${attrParts.join('-')}`.replace(/-+/g, '-').toUpperCase();
+  };
+  // ── Option Types Management ────────────────────────────
+  const addOptionType = () => {
+    if (!newOptionName.trim() || !newOptionDisplayName.trim()) {
+      toast.error('Nom et nom affiché requis pour l\'option');
+      return;
+    }
+    if (optionTypes.some(o => o.name.toLowerCase() === newOptionName.trim().toLowerCase())) {
+      toast.error('Cette option existe déjà');
+      return;
+    }
+
+    setOptionTypes([
+      ...optionTypes,
+      {
+        name: newOptionName.trim(),
+        displayName: newOptionDisplayName.trim(),
+        values: [],
+      },
+    ]);
+    setNewOptionName('');
+    setNewOptionDisplayName('');
+  };
+
+  const addValueToOption = (optionIndex: number) => {
+    if (!newOptionValue.trim()) return;
+    const updated = [...optionTypes];
+    if (updated[optionIndex].values.includes(newOptionValue.trim())) {
+      toast.error('Cette valeur existe déjà');
+      return;
+    }
+    updated[optionIndex].values.push(newOptionValue.trim());
+    setOptionTypes(updated);
+    setNewOptionValue('');
+  };
+
+  const removeValueFromOption = (optionIndex: number, valueIndex: number) => {
+    const updated = [...optionTypes];
+    updated[optionIndex].values.splice(valueIndex, 1);
+    setOptionTypes(updated);
+  };
+
+  const removeOptionType = (index: number) => {
+    setOptionTypes(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // ── Variants ───────────────────────────────────────────
   const addVariant = () => {
     setVariants([
       ...variants,
       {
-        name: '',
         sku: '',
         price: 0,
         stock: 0,
         isDefault: false,
+        attributes: {},
         images: [],
         uploadedImageUrls: [],
       },
@@ -90,35 +191,35 @@ export default function ProductCreate() {
   };
 
   const removeVariant = (index: number) => {
-  if (variants.length === 1) {
-    toast.error('Au moins une variante est obligatoire');
-    return;
-  }
-
-  setVariants((prev) => {
-    const updated = prev.filter((_, i) => i !== index);
-
-    // Sécurité : s'assurer qu'il reste une variante par défaut
-    if (!updated.some(v => v.isDefault)) {
-      updated[0].isDefault = true;
+    if (variants.length === 1) {
+      toast.error('Au moins une variante est obligatoire');
+      return;
     }
-
-    return updated;
-  });
-};
+    setVariants(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      if (!updated.some(v => v.isDefault)) {
+        updated[0].isDefault = true;
+      }
+      return updated;
+    });
+  };
 
   const updateVariant = (index: number, field: keyof Variant, value: any) => {
     const updated = [...variants];
-
     if (field === 'isDefault' && value === true) {
-      // Désactiver toutes les autres
-      updated.forEach((v, i) => {
-        v.isDefault = i === index;
-      });
+      updated.forEach((v, i) => (v.isDefault = i === index));
     } else {
       updated[index] = { ...updated[index], [field]: value };
     }
+    setVariants(updated);
+  };
 
+  const updateVariantAttribute = (variantIndex: number, attrName: string, value: string) => {
+    const updated = [...variants];
+    updated[variantIndex].attributes = {
+      ...updated[variantIndex].attributes,
+      [attrName]: value,
+    };
     setVariants(updated);
   };
 
@@ -131,21 +232,23 @@ export default function ProductCreate() {
         return;
       }
 
-      const newPreviews = newFiles.map((f) => URL.createObjectURL(f));
-      const updatedVariants = [...variants];
-      updatedVariants[variantIndex].images.push(...newFiles.map((f, i) => ({
-        file: f,
-        preview: newPreviews[i],
-      })));
-      setVariants(updatedVariants);
+      const newPreviews = newFiles.map(f => URL.createObjectURL(f));
+      const updated = [...variants];
+      updated[variantIndex].images.push(
+        ...newFiles.map((f, i) => ({
+          file: f,
+          preview: newPreviews[i],
+        }))
+      );
+      setVariants(updated);
     }
   };
 
   const removeVariantImage = (variantIndex: number, imageIndex: number) => {
-    const updatedVariants = [...variants];
-    updatedVariants[variantIndex].images = updatedVariants[variantIndex].images.filter((_, i) => i !== imageIndex);
-    updatedVariants[variantIndex].uploadedImageUrls = updatedVariants[variantIndex].uploadedImageUrls.filter((_, i) => i !== imageIndex);
-    setVariants(updatedVariants);
+    const updated = [...variants];
+    updated[variantIndex].images = updated[variantIndex].images.filter((_, i) => i !== imageIndex);
+    updated[variantIndex].uploadedImageUrls = updated[variantIndex].uploadedImageUrls.filter((_, i) => i !== imageIndex);
+    setVariants(updated);
   };
 
   const uploadVariantImages = async (variantIndex: number): Promise<string[]> => {
@@ -161,12 +264,15 @@ export default function ProductCreate() {
       });
 
       const newUrls = res.data.urls || [];
-      const updatedVariants = [...variants];
-      updatedVariants[variantIndex].uploadedImageUrls.push(...newUrls);
-      setVariants(updatedVariants);
+      const updated = [...variants];
+      updated[variantIndex].uploadedImageUrls = [
+        ...updated[variantIndex].uploadedImageUrls,
+        ...newUrls,
+      ];
+      setVariants(updated);
       return newUrls;
     } catch (err: any) {
-      toast.error(`Erreur upload images variante "${variant.name}"`);
+      toast.error(`Erreur upload images pour la variante`);
       return [];
     }
   };
@@ -175,42 +281,42 @@ export default function ProductCreate() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
-    if (!name.trim() || !description.trim() ) {
-      toast.error('Champs obligatoires manquants');
+    if (!name.trim() || !description.trim()) {
+      toast.error('Nom et description obligatoires');
       return;
     }
 
-    if (!variants.some(v => v.isDefault)) {
-      variants[0].isDefault = true;
+    if (optionTypes.length > 0 && variants.length === 0) {
+      toast.error('Au moins une variante requise quand des options sont définies');
+      return;
     }
 
-    if (variants.length === 0) {
-      toast.error("Au moins une variante est obligatoire");
-      return;
+    // Vérifier que chaque variante a toutes les attributes
+    const requiredAttrs = optionTypes.map(o => o.name);
+    for (const [i, v] of variants.entries()) {
+      for (const attr of requiredAttrs) {
+        if (!v.attributes[attr]) {
+          toast.error(`Variante ${i + 1} : attribut "${attr}" manquant`);
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
 
     try {
-
-      // Upload images pour chaque variante
+      // Upload images pour toutes les variantes
       const variantsWithImages = [...variants];
       for (let i = 0; i < variantsWithImages.length; i++) {
-        const variantUrls = await uploadVariantImages(i);
-        variantsWithImages[i].uploadedImageUrls = [
-          ...variantsWithImages[i].uploadedImageUrls,
-          ...variantUrls,
-        ];
+        await uploadVariantImages(i);
       }
 
-
-      const cleanVariants = variants.map((v) => ({
-        name: v.name.trim(),
+      const cleanVariants = variants.map(v => ({
         sku: v.sku.trim(),
         price: Number(v.price),
         stock: Number(v.stock),
         images: v.uploadedImageUrls,
+        attributes: v.attributes,
         isDefault: v.isDefault,
       }));
 
@@ -219,7 +325,12 @@ export default function ProductCreate() {
         slug,
         description: description.trim(),
         brand: brand.trim() || undefined,
-        images: [], // backend le garde vide
+        images: [], // backend gère ça
+        optionTypes: optionTypes.map(ot => ({
+          name: ot.name,
+          displayName: ot.displayName,
+          values: ot.values,
+        })),
         variants: cleanVariants,
         isFeatured,
       };
@@ -229,7 +340,7 @@ export default function ProductCreate() {
       toast.success('Produit créé avec succès !');
       navigate('/products');
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Erreur création produit');
+      toast.error(err.response?.data?.message || 'Erreur lors de la création');
       console.error(err);
     } finally {
       setSubmitting(false);
@@ -257,19 +368,15 @@ export default function ProductCreate() {
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="ex: Manette DualSense Custom FIFA 25"
+                onChange={e => setName(e.target.value)}
+                placeholder="ex: T-shirt Oversize Premium"
                 required
               />
             </div>
 
             <div className="space-y-2">
               <Label>Slug (généré automatiquement)</Label>
-              <Input
-                value={slug}
-                readOnly
-                className="bg-muted cursor-not-allowed"
-              />
+              <Input value={slug} readOnly className="bg-muted cursor-not-allowed" />
             </div>
 
             <div className="space-y-2">
@@ -277,8 +384,8 @@ export default function ProductCreate() {
               <Input
                 id="brand"
                 value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                placeholder="ex: Sony Custom DZ"
+                onChange={e => setBrand(e.target.value)}
+                placeholder="ex: Nike, Adidas..."
               />
             </div>
 
@@ -287,30 +394,107 @@ export default function ProductCreate() {
               <Textarea
                 id="description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Décrivez le produit en détail..."
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Décrivez le produit..."
                 rows={5}
                 required
               />
             </div>
 
-
-            <div className="flex items-center space-x-2 pt-8">
-              <Switch
-                id="isFeatured"
-                checked={isFeatured}
-                onCheckedChange={setIsFeatured}
-              />
+            <div className="flex items-center space-x-2 pt-4">
+              <Switch id="isFeatured" checked={isFeatured} onCheckedChange={setIsFeatured} />
               <Label htmlFor="isFeatured">Produit mis en avant</Label>
             </div>
           </CardContent>
         </Card>
 
+        {/* Gestion des options (color, size, etc.) */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Types d'options (Couleur, Taille, Matière…)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <Label>Nom interne (clé)</Label>
+                <Input
+                  value={newOptionName}
+                  onChange={e => setNewOptionName(e.target.value)}
+                  placeholder="color, size..."
+                />
+              </div>
+              <div>
+                <Label>Nom affiché</Label>
+                <Input
+                  value={newOptionDisplayName}
+                  onChange={e => setNewOptionDisplayName(e.target.value)}
+                  placeholder="Couleur, Taille..."
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="button" onClick={addOptionType}>
+                  <Plus className="mr-2 h-4 w-4" /> Ajouter option
+                </Button>
+              </div>
+            </div>
+
+            {optionTypes.length > 0 && (
+              <div className="space-y-6 mt-6">
+                {optionTypes.map((opt, optIdx) => (
+                  <div key={optIdx} className="border rounded-lg p-4 relative">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-2 right-2 text-red-600"
+                      onClick={() => removeOptionType(optIdx)}
+                    >
+                      <Trash2 className="h-5 w-5" />
+                    </Button>
+
+                    <div className="font-medium mb-3">
+                      {opt.displayName} ({opt.name})
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {opt.values.map((val, valIdx) => (
+                        <div
+                          key={valIdx}
+                          className="bg-secondary px-3 py-1 rounded-full flex items-center gap-2 text-sm"
+                        >
+                          {val}
+                          <button
+                            type="button"
+                            onClick={() => removeValueFromOption(optIdx, valIdx)}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        value={newOptionValue}
+                        onChange={e => setNewOptionValue(e.target.value)}
+                        placeholder={`Ajouter une valeur pour ${opt.displayName}`}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addValueToOption(optIdx))}
+                      />
+                      <Button type="button" variant="secondary" onClick={() => addValueToOption(optIdx)}>
+                        Ajouter
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Variantes */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Variantes (optionnel)</CardTitle>
+            <CardTitle>Variantes</CardTitle>
             <Button type="button" variant="outline" onClick={addVariant}>
               <Plus className="mr-2 h-4 w-4" /> Ajouter variante
             </Button>
@@ -318,7 +502,7 @@ export default function ProductCreate() {
           <CardContent>
             {variants.length === 0 ? (
               <p className="text-center py-6 text-muted-foreground">
-                Pas de variantes → le produit utilisera les images globales et le stock global
+                Ajoutez au moins une variante
               </p>
             ) : (
               <div className="space-y-8">
@@ -333,42 +517,66 @@ export default function ProductCreate() {
                       <Trash2 className="h-5 w-5" />
                     </Button>
 
-                    <div className="grid gap-4 md:grid-cols-5 mb-6">
-                      <div>
-                        <Label>Nom *</Label>
-                        <Input
-                          value={variant.name}
-                          onChange={(e) => updateVariant(idx, 'name', e.target.value)}
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Label>SKU *</Label>
-                        <Input
-                          value={variant.sku}
-                          onChange={(e) => updateVariant(idx, 'sku', e.target.value)}
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Label>Prix *</Label>
-                          <Input
-                            type="number"
-                            value={variant.price}
-                            min={0}
+                    <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-5 mb-6">
+                      {optionTypes.map(opt => (
+                        <div key={opt.name}>
+                          <Label>{opt.displayName} *</Label>
+                          <select
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            value={variant.attributes[opt.name] || ''}
+                            onChange={e => updateVariantAttribute(idx, opt.name, e.target.value)}
                             required
-                            onChange={(e) =>
-                              updateVariant(idx, 'price', Number(e.target.value) || 0)
-                            }
-                          />
+                          >
+                            <option value="">Choisir...</option>
+                            {opt.values.map(v => (
+                              <option key={v} value={v}>
+                                {v}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+
+                      <div>
+  <Label>SKU *</Label>
+  <div className="relative">
+    <Input
+      value={variant.sku}
+      onChange={e => updateVariant(idx, 'sku', e.target.value.toUpperCase())}
+      required
+      className={variant.sku !== generateSKU(variant, name, brand) ? "border-amber-400" : ""}
+    />
+      <Button
+    type="button"
+    variant="ghost"
+    size="sm"
+    className="absolute right-2 top-1/2 -translate-y-1/2"
+    onClick={() => {
+      const suggested = generateSKU(variant, name, brand);
+      updateVariant(idx, 'sku', suggested);
+    }}
+  >
+    ↻
+  </Button>
+  </div>
+</div>
+                      <div>
+                        <Label>Prix (DZD) *</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={variant.price}
+                          onChange={e => updateVariant(idx, 'price', Number(e.target.value) || 0)}
+                          required
+                        />
                       </div>
                       <div>
                         <Label>Stock</Label>
                         <Input
                           type="number"
-                          value={variant.stock}
-                          onChange={(e) => updateVariant(idx, 'stock', Number(e.target.value) || 0)}
                           min={0}
+                          value={variant.stock}
+                          onChange={e => updateVariant(idx, 'stock', Number(e.target.value) || 0)}
                         />
                       </div>
                       <div className="flex items-end">
@@ -377,16 +585,16 @@ export default function ProductCreate() {
                             type="checkbox"
                             id={`default-${idx}`}
                             checked={variant.isDefault}
-                            onChange={(e) => updateVariant(idx, 'isDefault', e.target.checked)}
+                            onChange={e => updateVariant(idx, 'isDefault', e.target.checked)}
                           />
                           <Label htmlFor={`default-${idx}`}>Par défaut</Label>
                         </div>
                       </div>
                     </div>
 
-                    {/* Images spécifiques à la variante */}
+                    {/* Images */}
                     <div className="mt-6">
-                      <Label>Images de cette variante (max 5)</Label>
+                      <Label>Images (max 5)</Label>
                       <div className="flex items-center gap-3 mt-2">
                         <Button
                           type="button"
@@ -394,7 +602,7 @@ export default function ProductCreate() {
                           size="sm"
                           onClick={() => document.getElementById(`variant-upload-${idx}`)?.click()}
                         >
-                          <Upload className="mr-2 h-4 w-4" /> Ajouter
+                          <Upload className="mr-2 h-4 w-4" /> Ajouter images
                         </Button>
                         <input
                           id={`variant-upload-${idx}`}
@@ -402,7 +610,7 @@ export default function ProductCreate() {
                           accept="image/*"
                           multiple
                           className="hidden"
-                          onChange={(e) => handleVariantImageChange(e, idx)}
+                          onChange={e => handleVariantImageChange(e, idx)}
                         />
                       </div>
 
@@ -412,7 +620,7 @@ export default function ProductCreate() {
                             <div key={imgIdx} className="relative group">
                               <img
                                 src={img.preview}
-                                alt="Variante"
+                                alt="preview"
                                 className="h-24 w-full object-cover rounded border"
                               />
                               <Button
@@ -435,21 +643,21 @@ export default function ProductCreate() {
           </CardContent>
         </Card>
 
-        {/* Boutons d'action */}
+        {/* Submit */}
         <div className="flex justify-end gap-4 pt-10">
           <Button
             type="button"
             variant="outline"
             onClick={() => navigate('/products')}
-            disabled={submitting || uploading}
+            disabled={submitting}
           >
             Annuler
           </Button>
-          <Button type="submit" disabled={submitting || uploading }>
+          <Button type="submit" disabled={submitting}>
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Création en cours...
+                Création...
               </>
             ) : (
               'Créer le produit'

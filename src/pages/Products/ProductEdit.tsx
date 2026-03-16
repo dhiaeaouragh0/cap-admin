@@ -14,20 +14,26 @@ import api from '@/lib/api';
 // ──────────────────────────────────────────────── Types
 
 interface VariantImage {
-  file?: File;              // seulement pour les nouvelles images (preview)
-  preview: string;          // URL de preview (locale ou déjà uploadée)
-  isNew?: boolean;          // marque les images nouvellement ajoutées
+  file?: File;          // only for newly added images
+  preview: string;      // preview URL (local or existing)
+  isNew?: boolean;      // marks newly added images
+}
+
+interface OptionType {
+  name: string;
+  displayName: string;
+  values: string[];
 }
 
 interface Variant {
-  _id?: string;             // présent si variante existante
-  name: string;
+  _id?: string;                   // present for existing variants
   sku: string;
   price: number;
   stock: number;
   isDefault: boolean;
-  images: VariantImage[];           // mix : anciennes (URL) + nouvelles (File + preview)
-  uploadedImageUrls: string[];      // URLs finales à envoyer au backend
+  attributes: Record<string, string>;   // color: "Noir", size: "M", ...
+  images: VariantImage[];               // mix: old URLs + new File+preview
+  uploadedImageUrls: string[];          // final URLs to send
 }
 
 export default function ProductEdit() {
@@ -44,23 +50,10 @@ export default function ProductEdit() {
   const [brand, setBrand] = useState('');
   const [isFeatured, setIsFeatured] = useState(false);
 
+  const [optionTypes, setOptionTypes] = useState<OptionType[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
 
-  // Générer slug en temps réel (mais on le charge aussi depuis le backend)
-  useEffect(() => {
-    if (name.trim() && !slug) { // on ne régénère que si vide
-      const generated = name
-        .toLowerCase()
-        .replace(/\s+/g, '-')
-        .replace(/[^\w\-]+/g, '')
-        .replace(/\-\-+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .trim();
-      setSlug(generated);
-    }
-  }, [name, slug]);
-
-  // ── Charger le produit ─────────────────────────────────
+  // ── Load product ───────────────────────────────────────
   useEffect(() => {
     if (!id) return;
 
@@ -76,29 +69,32 @@ export default function ProductEdit() {
         setBrand(product.brand || '');
         setIsFeatured(product.isFeatured || false);
 
-        // Préparer les variantes
+        // Load optionTypes
+        setOptionTypes(product.optionTypes || []);
+
+        // Prepare variants
         const loadedVariants = (product.variants || []).map((v: any) => ({
           _id: v._id,
-          name: v.name || '',
           sku: v.sku || '',
           price: v.price || 0,
           stock: v.stock || 0,
           isDefault: v.isDefault || false,
+          attributes: v.attributes || {},           // Map → object in JS
           images: (v.images || []).map((url: string) => ({
             preview: url,
             isNew: false,
           })),
-          uploadedImageUrls: [...(v.images || [])], // déjà uploadées
+          uploadedImageUrls: [...(v.images || [])],
         }));
 
-        // S'il n'y a pas de variantes (cas legacy), on en crée une par défaut
-        if (loadedVariants.length === 0) {
+        // Fallback if no variants (should not happen with new schema)
+        if (loadedVariants.length === 0 && optionTypes.length === 0) {
           loadedVariants.push({
-            name: '',
             sku: '',
             price: 0,
             stock: 0,
             isDefault: true,
+            attributes: {},
             images: [],
             uploadedImageUrls: [],
           });
@@ -117,16 +113,17 @@ export default function ProductEdit() {
     fetchProduct();
   }, [id, navigate]);
 
-  // ── Gestion des variantes ──────────────────────────────
+  // ── Variant management ─────────────────────────────────
   const addVariant = () => {
+    const emptyAttrs = Object.fromEntries(optionTypes.map(o => [o.name, '']));
     setVariants([
       ...variants,
       {
-        name: '',
         sku: '',
         price: 0,
         stock: 0,
         isDefault: false,
+        attributes: emptyAttrs,
         images: [],
         uploadedImageUrls: [],
       },
@@ -138,10 +135,9 @@ export default function ProductEdit() {
       toast.error('Au moins une variante est obligatoire');
       return;
     }
-
-    setVariants((prev) => {
+    setVariants(prev => {
       const updated = prev.filter((_, i) => i !== index);
-      if (!updated.some((v) => v.isDefault)) {
+      if (!updated.some(v => v.isDefault)) {
         updated[0].isDefault = true;
       }
       return updated;
@@ -150,13 +146,20 @@ export default function ProductEdit() {
 
   const updateVariant = (index: number, field: keyof Variant, value: any) => {
     const updated = [...variants];
-
     if (field === 'isDefault' && value === true) {
       updated.forEach((v, i) => (v.isDefault = i === index));
     } else {
       updated[index] = { ...updated[index], [field]: value };
     }
+    setVariants(updated);
+  };
 
+  const updateVariantAttribute = (variantIndex: number, attrName: string, value: string) => {
+    const updated = [...variants];
+    updated[variantIndex].attributes = {
+      ...updated[variantIndex].attributes,
+      [attrName]: value,
+    };
     setVariants(updated);
   };
 
@@ -171,13 +174,13 @@ export default function ProductEdit() {
       return;
     }
 
-    const newPreviews = newFiles.map((f) => ({
+    const newPreviews = newFiles.map(f => ({
       file: f,
       preview: URL.createObjectURL(f),
       isNew: true,
     }));
 
-    setVariants((prev) => {
+    setVariants(prev => {
       const updated = [...prev];
       updated[variantIndex].images.push(...newPreviews);
       return updated;
@@ -185,14 +188,14 @@ export default function ProductEdit() {
   };
 
   const removeVariantImage = (variantIndex: number, imageIndex: number) => {
-    setVariants((prev) => {
+    setVariants(prev => {
       const updated = [...prev];
       const variant = updated[variantIndex];
 
-      // Supprimer l'image locale / preview
+      // Remove from images array
       variant.images = variant.images.filter((_, i) => i !== imageIndex);
 
-      // Si c'était une ancienne image → on la retire aussi des URLs à envoyer
+      // If it was an old image, also remove from uploadedImageUrls
       if (!variant.images[imageIndex]?.isNew) {
         variant.uploadedImageUrls = variant.uploadedImageUrls.filter(
           (_, i) => i !== imageIndex
@@ -205,7 +208,7 @@ export default function ProductEdit() {
 
   const uploadNewVariantImages = async (variantIndex: number): Promise<string[]> => {
     const variant = variants[variantIndex];
-    const newImages = variant.images.filter((img) => img.isNew && img.file);
+    const newImages = variant.images.filter(img => img.isNew && img.file);
 
     if (newImages.length === 0) return [];
 
@@ -219,7 +222,7 @@ export default function ProductEdit() {
 
       return res.data.urls || [];
     } catch (err: any) {
-      toast.error(`Erreur upload images pour ${variant.name || 'une variante'}`);
+      toast.error(`Erreur upload images pour une variante`);
       return [];
     }
   };
@@ -229,37 +232,42 @@ export default function ProductEdit() {
     e.preventDefault();
 
     if (!name.trim() || !description.trim()) {
-      toast.error('Champs obligatoires manquants');
+      toast.error('Nom et description obligatoires');
       return;
     }
 
-    if (!variants.some((v) => v.isDefault)) {
-      variants[0].isDefault = true;
+    // Validate all required attributes are filled
+    const requiredAttrs = optionTypes.map(o => o.name);
+    for (const [i, v] of variants.entries()) {
+      for (const attr of requiredAttrs) {
+        if (!v.attributes[attr]) {
+          toast.error(`Variante ${i + 1} : attribut "${attr}" manquant`);
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
 
     try {
-      // 1. Upload des **nouvelles** images pour chaque variante
+      // Upload new images for all variants
       const variantsCopy = [...variants];
-
       for (let i = 0; i < variantsCopy.length; i++) {
         const newUrls = await uploadNewVariantImages(i);
-        // On ajoute les nouvelles URLs aux URLs existantes
         variantsCopy[i].uploadedImageUrls = [
           ...variantsCopy[i].uploadedImageUrls,
           ...newUrls,
         ];
       }
 
-      // 2. Préparer le payload propre
-      const cleanVariants = variantsCopy.map((v) => ({
-        ...(v._id && { _id: v._id }), // important pour update
-        name: v.name.trim(),
+      // Prepare clean payload
+      const cleanVariants = variantsCopy.map(v => ({
+        ...(v._id && { _id: v._id }),
         sku: v.sku.trim(),
         price: Number(v.price),
         stock: Number(v.stock),
-        images: v.uploadedImageUrls, // seulement les URLs finales
+        images: v.uploadedImageUrls,
+        attributes: v.attributes,
         isDefault: v.isDefault,
       }));
 
@@ -268,7 +276,12 @@ export default function ProductEdit() {
         slug: slug.trim(),
         description: description.trim(),
         brand: brand.trim() || undefined,
-        images: [], // backend gère ou ignore
+        images: [], // backend ignores or keeps
+        optionTypes: optionTypes.map(ot => ({
+          name: ot.name,
+          displayName: ot.displayName,
+          values: ot.values,
+        })),
         variants: cleanVariants,
         isFeatured,
       };
@@ -303,7 +316,7 @@ export default function ProductEdit() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
-        {/* Informations principales */}
+        {/* Main info */}
         <Card>
           <CardHeader>
             <CardTitle>Informations principales</CardTitle>
@@ -314,7 +327,7 @@ export default function ProductEdit() {
               <Input
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={e => setName(e.target.value)}
                 required
               />
             </div>
@@ -323,7 +336,7 @@ export default function ProductEdit() {
               <Label>Slug</Label>
               <Input
                 value={slug}
-                onChange={(e) => setSlug(e.target.value)}
+                onChange={e => setSlug(e.target.value)}
                 placeholder="slug-unique-du-produit"
               />
             </div>
@@ -333,7 +346,7 @@ export default function ProductEdit() {
               <Input
                 id="brand"
                 value={brand}
-                onChange={(e) => setBrand(e.target.value)}
+                onChange={e => setBrand(e.target.value)}
               />
             </div>
 
@@ -342,24 +355,20 @@ export default function ProductEdit() {
               <Textarea
                 id="description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={e => setDescription(e.target.value)}
                 rows={5}
                 required
               />
             </div>
 
-            <div className="flex items-center space-x-2 pt-8">
-              <Switch
-                id="isFeatured"
-                checked={isFeatured}
-                onCheckedChange={setIsFeatured}
-              />
+            <div className="flex items-center space-x-2 pt-4">
+              <Switch id="isFeatured" checked={isFeatured} onCheckedChange={setIsFeatured} />
               <Label htmlFor="isFeatured">Produit mis en avant</Label>
             </div>
           </CardContent>
         </Card>
 
-        {/* Variantes */}
+        {/* Variants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Variantes</CardTitle>
@@ -385,32 +394,41 @@ export default function ProductEdit() {
                       <Trash2 className="h-5 w-5" />
                     </Button>
 
-                    <div className="grid gap-4 md:grid-cols-5 mb-6">
-                      <div>
-                        <Label>Nom *</Label>
-                        <Input
-                          value={variant.name}
-                          onChange={(e) => updateVariant(idx, 'name', e.target.value)}
-                          required
-                        />
-                      </div>
+                    <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-5 mb-6">
+                      {optionTypes.map(opt => (
+                        <div key={opt.name}>
+                          <Label>{opt.displayName} *</Label>
+                          <select
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                            value={variant.attributes[opt.name] || ''}
+                            onChange={e => updateVariantAttribute(idx, opt.name, e.target.value)}
+                            required
+                          >
+                            <option value="">Choisir...</option>
+                            {opt.values.map(v => (
+                              <option key={v} value={v}>
+                                {v}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+
                       <div>
                         <Label>SKU *</Label>
                         <Input
                           value={variant.sku}
-                          onChange={(e) => updateVariant(idx, 'sku', e.target.value)}
+                          onChange={e => updateVariant(idx, 'sku', e.target.value.toUpperCase())}
                           required
                         />
                       </div>
                       <div>
-                        <Label>Prix *</Label>
+                        <Label>Prix (DZD) *</Label>
                         <Input
                           type="number"
-                          value={variant.price}
                           min={0}
-                          onChange={(e) =>
-                            updateVariant(idx, 'price', Number(e.target.value) || 0)
-                          }
+                          value={variant.price}
+                          onChange={e => updateVariant(idx, 'price', Number(e.target.value) || 0)}
                           required
                         />
                       </div>
@@ -418,11 +436,9 @@ export default function ProductEdit() {
                         <Label>Stock</Label>
                         <Input
                           type="number"
-                          value={variant.stock}
                           min={0}
-                          onChange={(e) =>
-                            updateVariant(idx, 'stock', Number(e.target.value) || 0)
-                          }
+                          value={variant.stock}
+                          onChange={e => updateVariant(idx, 'stock', Number(e.target.value) || 0)}
                         />
                       </div>
                       <div className="flex items-end">
@@ -431,9 +447,7 @@ export default function ProductEdit() {
                             type="checkbox"
                             id={`default-${idx}`}
                             checked={variant.isDefault}
-                            onChange={(e) =>
-                              updateVariant(idx, 'isDefault', e.target.checked)
-                            }
+                            onChange={e => updateVariant(idx, 'isDefault', e.target.checked)}
                           />
                           <Label htmlFor={`default-${idx}`}>Par défaut</Label>
                         </div>
@@ -448,11 +462,9 @@ export default function ProductEdit() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            document.getElementById(`variant-upload-${idx}`)?.click()
-                          }
+                          onClick={() => document.getElementById(`variant-upload-${idx}`)?.click()}
                         >
-                          <Upload className="mr-2 h-4 w-4" /> Ajouter
+                          <Upload className="mr-2 h-4 w-4" /> Ajouter images
                         </Button>
                         <input
                           id={`variant-upload-${idx}`}
@@ -460,7 +472,7 @@ export default function ProductEdit() {
                           accept="image/*"
                           multiple
                           className="hidden"
-                          onChange={(e) => handleVariantImageChange(e, idx)}
+                          onChange={e => handleVariantImageChange(e, idx)}
                         />
                       </div>
 
@@ -470,7 +482,7 @@ export default function ProductEdit() {
                             <div key={imgIdx} className="relative group">
                               <img
                                 src={img.preview}
-                                alt="Variante"
+                                alt="preview"
                                 className="h-24 w-full object-cover rounded border"
                               />
                               <Button
@@ -493,7 +505,7 @@ export default function ProductEdit() {
           </CardContent>
         </Card>
 
-        {/* Actions */}
+        {/* Submit buttons */}
         <div className="flex justify-end gap-4 pt-10">
           <Button
             type="button"
@@ -507,7 +519,7 @@ export default function ProductEdit() {
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Modification en cours...
+                Enregistrement...
               </>
             ) : (
               'Enregistrer les modifications'
